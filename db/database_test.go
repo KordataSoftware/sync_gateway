@@ -130,15 +130,15 @@ func testBucketInit(tester testing.TB, useGSI bool) base.TestBucket {
 		testBucket := base.GetTestBucket(tester)
 		err := installViews(testBucket.Bucket)
 		if err != nil {
-			tester.Fatalf("Couldn't connect to bucket: %v", err)
-			// ^^ effectively panics
+			testBucket.Close() // Close the bucket, it will get re-opened on next loop iteration
+			continue           // Goes to top of outer for loop to retry
 		}
 
 		if useGSI {
 			err = InitializeIndexes(testBucket.Bucket, base.TestUseXattrs(), 0)
 			if err != nil {
-				tester.Fatalf("Unable to initialize GSI indexes for test: %v", err)
-				// ^^ effectively panics
+				testBucket.Close()
+				continue
 			}
 
 			// Since GetTestBucket() always returns an _empty_ bucket, it's safe to wait for the indexes to be empty
@@ -148,22 +148,21 @@ func testBucketInit(tester testing.TB, useGSI bool) base.TestBucket {
 				if waitForIndexRollbackErr != nil {
 					base.Infof(base.KeyAll, "Error WaitForIndexEmpty: %v.  Drop indexes and retry", waitForIndexRollbackErr)
 					if err := base.DropAllBucketIndexes(gocbBucket); err != nil {
-						tester.Fatalf("Unable to drop GSI indexes for test: %v", err)
-						// ^^ effectively panics
+						testBucket.Close()
+						continue
 					}
-					testBucket.Close() // Close the bucket, it will get re-opened on next loop iteration
-					continue           // Goes to top of outer for loop to retry
+					testBucket.Close()
+					continue
 				}
 
 			}
 		}
 
 		return testBucket
-
 	}
 
-	panic(fmt.Sprintf("Failed to create a testbucket after multiple attempts"))
-
+	tester.Fatalf("Failed to create a testbucket after multiple attempts")
+	return base.TestBucket{Bucket: nil}
 }
 
 func setupTestLeakyDBWithCacheOptions(t *testing.T, options CacheOptions, leakyOptions base.LeakyBucketConfig) *Database {
