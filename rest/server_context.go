@@ -28,6 +28,10 @@ import (
 	"github.com/couchbase/sync_gateway/base"
 	"github.com/couchbase/sync_gateway/db"
 	"github.com/couchbaselabs/sg-replicate"
+
+	"context"
+	"cloud.google.com/go/storage"
+	// "google.golang.org/api/option"
 )
 
 // The URL that stats will be reported to if deployment_id is set in the config
@@ -510,6 +514,22 @@ func (sc *ServerContext) _getOrAddDatabaseFromConfig(config *DbConfig, useExisti
 
 	if config.RevsLimit != nil && *config.RevsLimit > 0 {
 		dbcontext.RevsLimit = *config.RevsLimit
+	}
+
+	if (config.AttachmentsGCSBucketName != nil) {
+		gcsClient, err := storage.NewClient(context.Background())
+		
+		// gcsClient, err := storage.NewClient(context.Background(), 
+		// option.WithCredentialsFile("/path/to/service-account-key.json"))
+
+		if err != nil {
+			base.Logf("Failed to create google cloud storage client for attachments for database %q", dbName)
+			return nil, err
+		}
+
+		attachmentsGCSBucketName := *config.AttachmentsGCSBucketName
+		base.Logf("\tCreating reference to google cloud attachments bucket %s", attachmentsGCSBucketName)	
+		dbcontext.AttachmentsBucket = gcsClient.Bucket(attachmentsGCSBucketName)
 	}
 
 	dbcontext.AllowEmptyPassword = config.AllowEmptyPassword

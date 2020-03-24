@@ -28,6 +28,8 @@ import (
 	"github.com/couchbase/sync_gateway/auth"
 	"github.com/couchbase/sync_gateway/base"
 	"github.com/couchbase/sync_gateway/channels"
+
+	"cloud.google.com/go/storage"
 )
 
 const (
@@ -72,6 +74,7 @@ type DatabaseContext struct {
 	State              uint32                  // The runtime state of the DB from a service perspective
 	ExitChanges        chan struct{}           // Active _changes feeds on the DB will close when this channel is closed
 	OIDCProviders      auth.OIDCProviderMap    // OIDC clients
+	AttachmentsBucket	 *storage.BucketHandle
 }
 
 type DatabaseContextOptions struct {

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"strings"
+	"context"
 
 	"github.com/couchbase/sync_gateway/base"
 )
@@ -36,7 +37,12 @@ const kMinCompressedJSONSize = 300
 
 // Key for retrieving an attachment from Couchbase.
 type AttachmentKey string
-type AttachmentData map[AttachmentKey][]byte
+type Attachment struct {
+	Key string
+	ContentType string
+	Data []byte
+}
+type AttachmentData map[AttachmentKey]Attachment
 
 // Given a CouchDB document body about to be stored in the database, goes through the _attachments
 // dict, finds attachments with inline bodies, copies the bodies into the Couchbase db, and replaces
@@ -60,12 +66,23 @@ func (db *Database) storeAttachments(doc *document, body Body, generation int, p
 			if err != nil {
 				return nil, err
 			}
-			key := AttachmentKey(sha1DigestKey(attachment))
-			newAttachmentData[key] = attachment
+			
+			organization := body["organization"]
+			entityType := body["type"]
+			docId := body["id"]
+			digest := sha1DigestKey(attachment)
+
+			key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, name, digest)
+
+			newAttachmentData[AttachmentKey(digest)] = Attachment {
+				Key: key,
+				ContentType: "image/jpeg",
+				Data: attachment,
+			}
 
 			newMeta := map[string]interface{}{
 				"stub":   true,
-				"digest": string(key),
+				"digest": digest,
 				"revpos": generation,
 			}
 			if contentType, ok := meta["content_type"].(string); ok {
@@ -96,8 +113,10 @@ func (db *Database) storeAttachments(doc *document, body Body, generation int, p
 			}
 
 			if parentAttachments != nil {
-				if parentAttachment := parentAttachments[name]; parentAttachment != nil {
-					atts[name] = parentAttachment
+				if parentAttachment := parentAttachments[name].(map[string]interface{}); parentAttachment != nil {
+					if (meta["digest"] == parentAttachment["digest"]) {
+						atts[name] = parentAttachment
+					}
 				}
 			} else if meta["digest"] == nil {
 				return nil, base.HTTPErrorf(400, "Missing digest in stub attachment %q", name)
@@ -145,11 +164,16 @@ func (db *Database) retrieveAncestorAttachments(doc *document, parentRev string,
 func (db *Database) loadBodyAttachments(body Body, minRevpos int) (Body, error) {
 
 	body = body.ImmutableAttachmentsCopy()
-	for _, value := range BodyAttachments(body) {
+	for attachmentName, value := range BodyAttachments(body) {
 		meta := value.(map[string]interface{})
 		revpos, ok := base.ToInt64(meta["revpos"])
 		if ok && revpos >= int64(minRevpos) {
-			key := AttachmentKey(meta["digest"].(string))
+			organization := body["organization"]
+			entityType := body["type"]
+			docId := body["id"]
+			digest := meta["digest"].(string)
+		
+			key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, attachmentName, digest)		
 			data, err := db.GetAttachment(key)
 			if err != nil {
 				return nil, err
@@ -162,30 +186,40 @@ func (db *Database) loadBodyAttachments(body Body, minRevpos int) (Body, error) 
 }
 
 // Retrieves an attachment, base64-encoded, given its key.
-func (db *Database) GetAttachment(key AttachmentKey) ([]byte, error) {
-	v, _, err := db.Bucket.GetRaw(attachmentKeyToString(key))
-	return v, err
-}
+func (db *Database) GetAttachment(key string) ([]byte, error) {
+	base.LogTo("Attach", "\tReading attachment from bucket. key=%s", key)
+	reader, err := db.AttachmentsBucket.Object(key).NewReader(context.Background())
 
-// Stores a base64-encoded attachment and returns the key to get it by.
-func (db *Database) setAttachment(attachment []byte) (AttachmentKey, error) {
-	key := AttachmentKey(sha1DigestKey(attachment))
-	_, err := db.Bucket.AddRaw(attachmentKeyToString(key), 0, attachment)
-	if err == nil {
-		base.LogTo("Attach", "\tAdded attachment %q", key)
+	if err != nil {
+		return nil, err
 	}
-	return key, err
+
+	data, err := ioutil.ReadAll(reader)
+	return data, err
 }
 
 func (db *Database) setAttachments(attachments AttachmentData) error {
-	for key, data := range attachments {
-		_, err := db.Bucket.AddRaw(attachmentKeyToString(key), 0, data)
+	for _, attachment := range attachments {
+		writer := db.AttachmentsBucket.Object(attachment.Key).NewWriter(context.Background())
+		writer.ContentType = attachment.ContentType
+		_, err := writer.Write(attachment.Data)
+		
 		if err == nil {
-			base.LogTo("Attach", "\tAdded attachment %q", key)
+			base.LogTo("Attach", "\tWrote %s attachment to bucket. key=%s", 
+				attachment.ContentType, attachment.Key)
 		} else {
+			base.LogTo("Attach", "\tFailed to write %s attachment to gcs bucket. key=%s", 
+				attachment.ContentType, attachment.Key)
 			return err
 		}
+		
+		err = writer.Close()
+		
+		if (err != nil) {
+			base.LogTo("Attach", "\tFailed to close attachment gcs writer: %s", err)
+		}
 	}
+
 	return nil
 }
 

@@ -152,8 +152,14 @@ func (h *handler) handleGetAttachment() error {
 	if !ok {
 		return base.HTTPErrorf(http.StatusNotFound, "missing attachment %s", attachmentName)
 	}
+	
+	organization := body["organization"]
+	entityType := body["type"]
+	docId := body["id"]
 	digest := meta["digest"].(string)
-	data, err := h.db.GetAttachment(db.AttachmentKey(digest))
+
+	key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, attachmentName, digest)
+	data, err := h.db.GetAttachment(key)
 	if err != nil {
 		return err
 	}
