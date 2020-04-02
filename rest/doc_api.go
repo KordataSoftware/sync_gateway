@@ -153,10 +153,16 @@ func (h *handler) handleGetAttachment() error {
 		return base.HTTPErrorf(http.StatusNotFound, "missing attachment %s", attachmentName)
 	}
 	
-	organization := body["organization"]
-	entityType := body["type"]
-	docId := body["id"]
-	digest := meta["digest"].(string)
+	docId := body["id"].(string)
+	digest := strings.Replace(meta["digest"].(string), "/", "_", -1)
+	entityType := body["type"].(string)
+
+	var organization string
+	if (entityType == "_organization") {
+		organization = strings.Replace(docId, "organization_", "", 1)
+	} else {
+		organization = body["organization"].(string)
+	}
 
 	key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, attachmentName, digest)
 	data, err := h.db.GetAttachment(key)

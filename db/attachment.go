@@ -67,10 +67,16 @@ func (db *Database) storeAttachments(doc *document, body Body, generation int, p
 				return nil, err
 			}
 			
-			organization := body["organization"]
-			entityType := body["type"]
-			docId := body["id"]
-			digest := sha1DigestKey(attachment)
+			docId := body["id"].(string)
+			digest := strings.Replace(sha1DigestKey(attachment), "/", "_", -1)
+			entityType := body["type"].(string)
+
+			var organization string
+			if (entityType == "_organization") {
+				organization = strings.Replace(docId, "organization_", "", 1)
+			} else {
+				organization = body["organization"].(string)
+			}
 
 			key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, name, digest)
 
@@ -168,10 +174,16 @@ func (db *Database) loadBodyAttachments(body Body, minRevpos int) (Body, error) 
 		meta := value.(map[string]interface{})
 		revpos, ok := base.ToInt64(meta["revpos"])
 		if ok && revpos >= int64(minRevpos) {
-			organization := body["organization"]
-			entityType := body["type"]
-			docId := body["id"]
-			digest := meta["digest"].(string)
+			docId := body["id"].(string)
+			digest := strings.Replace(meta["digest"].(string), "/", "_", -1)
+			entityType := body["type"].(string)
+
+			var organization string
+			if (entityType == "_organization") {
+				organization = strings.Replace(docId, "organization_", "", 1)
+			} else {
+				organization = body["organization"].(string)
+			}
 		
 			key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, attachmentName, digest)		
 			data, err := db.GetAttachment(key)
