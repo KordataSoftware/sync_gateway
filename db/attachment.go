@@ -68,7 +68,7 @@ func (db *Database) storeAttachments(doc *document, body Body, generation int, p
 			}
 			
 			docId := body["id"].(string)
-			digest := strings.Replace(sha1DigestKey(attachment), "/", "_", -1)
+			digest := sha1DigestKey(attachment)
 			entityType := body["type"].(string)
 
 			var organization string
@@ -78,7 +78,7 @@ func (db *Database) storeAttachments(doc *document, body Body, generation int, p
 				organization = body["organization"].(string)
 			}
 
-			key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, name, digest)
+			key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, name, strings.Replace(digest, "/", "_", -1))
 
 			newAttachmentData[AttachmentKey(digest)] = Attachment {
 				Key: key,
@@ -119,9 +119,10 @@ func (db *Database) storeAttachments(doc *document, body Body, generation int, p
 			}
 
 			if parentAttachments != nil {
-				if parentAttachment := parentAttachments[name].(map[string]interface{}); parentAttachment != nil {
-					if (meta["digest"] == parentAttachment["digest"]) {
-						atts[name] = parentAttachment
+				if parentAttachment := parentAttachments[name]; parentAttachment != nil {
+					castParentAttachment := parentAttachment.(map[string]interface{})
+					if (meta["digest"] == castParentAttachment["digest"]) {
+						atts[name] = castParentAttachment
 					}
 				}
 			} else if meta["digest"] == nil {
@@ -203,6 +204,10 @@ func (db *Database) GetAttachment(key string) ([]byte, error) {
 	reader, err := db.AttachmentsBucket.Object(key).NewReader(context.Background())
 
 	if err != nil {
+		if strings.Contains(err.Error(), "storage: object doesn't exist") {
+			return nil, base.HTTPErrorf(404, "missing")
+		}
+
 		return nil, err
 	}
 
