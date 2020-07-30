@@ -80,7 +80,7 @@ func (db *Database) storeAttachments(doc *document, body Body, generation int, p
 
 			key := fmt.Sprintf("%s/%s/%s/%s/%s", organization, entityType, docId, name, strings.Replace(digest, "/", "_", -1))
 
-			newAttachmentData[AttachmentKey(digest)] = Attachment {
+			newAttachmentData[AttachmentKey(key)] = Attachment {
 				Key: key,
 				ContentType: "image/jpeg",
 				Data: attachment,
